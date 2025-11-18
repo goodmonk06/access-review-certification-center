@@ -1,0 +1,101 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model SystemResource {
+  id           String        @id @default(cuid())
+  name         String        @unique
+  type         ResourceType  @default(APP)
+  description  String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  accessGrants AccessGrant[]
+
+  @@map("system_resources")
+}
+
+model Principal {
+  id           String        @id @default(cuid())
+  externalId   String        @unique
+  name         String
+  email        String        @unique
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  accessGrants AccessGrant[]
+
+  @@map("principals")
+}
+
+model AccessGrant {
+  id         String         @id @default(cuid())
+  systemId   String
+  principalId String
+  role       String
+  grantedAt  DateTime       @default(now())
+  metaJson   Json?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  system     SystemResource @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  principal  Principal      @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  reviewItems ReviewItem[]
+
+  @@unique([systemId, principalId, role])
+  @@map("access_grants")
+}
+
+model ReviewCampaign {
+  id          String           @id @default(cuid())
+  name        String
+  periodStart DateTime
+  periodEnd   DateTime
+  status      CampaignStatus   @default(DRAFT)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  reviewItems ReviewItem[]
+
+  @@map("review_campaigns")
+}
+
+model ReviewItem {
+  id            String          @id @default(cuid())
+  campaignId    String
+  accessGrantId String
+  reviewerEmail String
+  decision      ReviewDecision  @default(PENDING)
+  decidedAt     DateTime?
+  comment       String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  campaign      ReviewCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  accessGrant   AccessGrant     @relation(fields: [accessGrantId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, accessGrantId])
+  @@index([reviewerEmail])
+  @@map("review_items")
+}
+
+enum ResourceType {
+  APP
+  DB
+  OTHER
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum ReviewDecision {
+  PENDING
+  KEEP
+  REVOKE
+}
