@@ -8,56 +8,87 @@ datasource db {
 }
 
 model SystemResource {
-  id           String        @id @default(cuid())
-  name         String        @unique
-  type         ResourceType  @default(APP)
-  description  String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  accessGrants AccessGrant[]
+  id                String              @id @default(cuid())
+  name              String              @unique
+  type              ResourceType        @default(APP)
+  description       String?
+  owner             String?
+  riskLevel         RiskLevel           @default(MEDIUM)
+  tags              String[]            @default([])
+  metadata          Json?
+  isActive          Boolean             @default(true)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  accessGrants      AccessGrant[]
+  systemIntegrations SystemIntegration[]
+  accessRequests    AccessRequest[]
 
   @@map("system_resources")
 }
 
 model Principal {
-  id           String        @id @default(cuid())
-  externalId   String        @unique
-  name         String
-  email        String        @unique
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  accessGrants AccessGrant[]
+  id                    String          @id @default(cuid())
+  externalId            String          @unique
+  name                  String
+  email                 String          @unique
+  department            String?
+  title                 String?
+  managerId             String?
+  isActive              Boolean         @default(true)
+  preferences           Json?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  accessGrants          AccessGrant[]
+  accessRequestsCreated AccessRequest[] @relation("RequesterRequests")
+  accessRequestsReviewed AccessRequest[] @relation("ReviewerRequests")
+  delegationsCreated    Delegation[]    @relation("DelegatorDelegations")
+  delegationsReceived   Delegation[]    @relation("DelegateeDelegations")
 
   @@map("principals")
 }
 
 model AccessGrant {
-  id         String         @id @default(cuid())
-  systemId   String
-  principalId String
-  role       String
-  grantedAt  DateTime       @default(now())
-  metaJson   Json?
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
+  id              String         @id @default(cuid())
+  systemId        String
+  principalId     String
+  role            String
+  grantedAt       DateTime       @default(now())
+  expiresAt       DateTime?
+  source          GrantSource    @default(MANUAL)
+  accessRequestId String?        @unique
+  metaJson        Json?
+  isActive        Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
-  system     SystemResource @relation(fields: [systemId], references: [id], onDelete: Cascade)
-  principal  Principal      @relation(fields: [principalId], references: [id], onDelete: Cascade)
-  reviewItems ReviewItem[]
+  system        SystemResource @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  principal     Principal      @relation(fields: [principalId], references: [id], onDelete: Cascade)
+  accessRequest AccessRequest? @relation(fields: [accessRequestId], references: [id])
+  reviewItems   ReviewItem[]
 
   @@unique([systemId, principalId, role])
+  @@index([principalId])
+  @@index([systemId])
+  @@index([isActive])
   @@map("access_grants")
 }
 
 model ReviewCampaign {
-  id          String           @id @default(cuid())
-  name        String
-  periodStart DateTime
-  periodEnd   DateTime
-  status      CampaignStatus   @default(DRAFT)
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  reviewItems ReviewItem[]
+  id              String          @id @default(cuid())
+  name            String
+  description     String?
+  periodStart     DateTime
+  periodEnd       DateTime
+  status          CampaignStatus  @default(DRAFT)
+  templateId      String?
+  autoReminder    Boolean         @default(true)
+  reminderDays    Int             @default(7)
+  metadata        Json?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  reviewItems     ReviewItem[]
+  template        ReviewTemplate? @relation(fields: [templateId], references: [id])
+  complianceReports ComplianceReport[]
 
   @@map("review_campaigns")
 }
@@ -69,21 +100,178 @@ model ReviewItem {
   reviewerEmail String
   decision      ReviewDecision  @default(PENDING)
   decidedAt     DateTime?
+  decidedBy     String?
   comment       String?
+  answers       Json?
+  priority      Priority        @default(MEDIUM)
+  delegatedTo   String?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
   campaign      ReviewCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   accessGrant   AccessGrant     @relation(fields: [accessGrantId], references: [id], onDelete: Cascade)
+  delegations   Delegation[]
 
   @@unique([campaignId, accessGrantId])
   @@index([reviewerEmail])
+  @@index([decision])
+  @@index([priority])
   @@map("review_items")
+}
+
+model AccessRequest {
+  id             String             @id @default(cuid())
+  systemId       String
+  requesterId    String
+  role           String
+  justification  String
+  urgency        Priority           @default(MEDIUM)
+  status         RequestStatus      @default(PENDING)
+  reviewerId     String?
+  reviewedAt     DateTime?
+  reviewComment  String?
+  expiresAt      DateTime?
+  metadata       Json?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  system         SystemResource     @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  requester      Principal          @relation("RequesterRequests", fields: [requesterId], references: [id], onDelete: Cascade)
+  reviewer       Principal?         @relation("ReviewerRequests", fields: [reviewerId], references: [id])
+  accessGrant    AccessGrant?
+
+  @@index([requesterId])
+  @@index([systemId])
+  @@index([status])
+  @@map("access_requests")
+}
+
+model ReviewTemplate {
+  id              String           @id @default(cuid())
+  name            String           @unique
+  description     String?
+  questions       Json?
+  rules           Json?
+  targetSystems   String[]         @default([])
+  targetRoles     String[]         @default([])
+  riskLevel       RiskLevel?
+  autoApprove     Boolean          @default(false)
+  requireComment  Boolean          @default(false)
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  campaigns       ReviewCampaign[]
+
+  @@map("review_templates")
+}
+
+model Delegation {
+  id            String         @id @default(cuid())
+  reviewItemId  String
+  delegatorId   String
+  delegateeId   String
+  reason        String?
+  startsAt      DateTime       @default(now())
+  endsAt        DateTime?
+  status        DelegationStatus @default(ACTIVE)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  reviewItem    ReviewItem     @relation(fields: [reviewItemId], references: [id], onDelete: Cascade)
+  delegator     Principal      @relation("DelegatorDelegations", fields: [delegatorId], references: [id], onDelete: Cascade)
+  delegatee     Principal      @relation("DelegateeDelegations", fields: [delegateeId], references: [id], onDelete: Cascade)
+
+  @@index([delegatorId])
+  @@index([delegateeId])
+  @@index([status])
+  @@map("delegations")
+}
+
+model AuditLog {
+  id            String         @id @default(cuid())
+  actor         String
+  action        AuditAction
+  target        String?
+  targetType    String?
+  details       Json?
+  ipAddress     String?
+  userAgent     String?
+  success       Boolean        @default(true)
+  errorMessage  String?
+  timestamp     DateTime       @default(now())
+
+  @@index([actor])
+  @@index([action])
+  @@index([timestamp])
+  @@index([targetType])
+  @@map("audit_logs")
+}
+
+model ComplianceReport {
+  id          String         @id @default(cuid())
+  campaignId  String?
+  name        String
+  reportType  ReportType
+  periodStart DateTime
+  periodEnd   DateTime
+  data        Json
+  generatedBy String
+  format      String         @default("JSON")
+  createdAt   DateTime       @default(now())
+
+  campaign    ReviewCampaign? @relation(fields: [campaignId], references: [id])
+
+  @@index([reportType])
+  @@index([createdAt])
+  @@map("compliance_reports")
+}
+
+model SystemIntegration {
+  id             String             @id @default(cuid())
+  systemId       String
+  provider       IntegrationProvider
+  config         Json
+  credentials    String?
+  isEnabled      Boolean            @default(true)
+  lastSyncAt     DateTime?
+  lastSyncStatus String?
+  syncInterval   Int?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  system         SystemResource     @relation(fields: [systemId], references: [id], onDelete: Cascade)
+
+  @@index([systemId])
+  @@index([provider])
+  @@map("system_integrations")
+}
+
+model Notification {
+  id          String             @id @default(cuid())
+  recipient   String
+  channel     NotificationChannel
+  subject     String
+  body        String
+  data        Json?
+  status      NotificationStatus @default(PENDING)
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  failedAt    DateTime?
+  errorMessage String?
+  retryCount  Int                @default(0)
+  createdAt   DateTime           @default(now())
+
+  @@index([recipient])
+  @@index([status])
+  @@index([channel])
+  @@map("notifications")
 }
 
 enum ResourceType {
   APP
   DB
+  CLOUD
+  NETWORK
   OTHER
 }
 
@@ -98,4 +286,93 @@ enum ReviewDecision {
   PENDING
   KEEP
   REVOKE
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum GrantSource {
+  MANUAL
+  IMPORTED
+  ACCESS_REQUEST
+  AUTOMATED
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PROVISIONED
+  CANCELLED
+}
+
+enum DelegationStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+enum AuditAction {
+  USER_LOGIN
+  USER_LOGOUT
+  GRANT_CREATED
+  GRANT_UPDATED
+  GRANT_REVOKED
+  CAMPAIGN_CREATED
+  CAMPAIGN_UPDATED
+  REVIEW_SUBMITTED
+  REQUEST_CREATED
+  REQUEST_APPROVED
+  REQUEST_REJECTED
+  DELEGATION_CREATED
+  TEMPLATE_CREATED
+  REPORT_GENERATED
+  SYSTEM_INTEGRATION
+  NOTIFICATION_SENT
+}
+
+enum ReportType {
+  SOC2
+  ISO27001
+  CAMPAIGN_SUMMARY
+  ACCESS_ANOMALY
+  COMPLIANCE_GAPS
+  CUSTOM
+}
+
+enum IntegrationProvider {
+  OKTA
+  AZURE_AD
+  GOOGLE_WORKSPACE
+  AWS_IAM
+  GITHUB
+  SALESFORCE
+  CUSTOM
+}
+
+enum NotificationChannel {
+  EMAIL
+  SLACK
+  TEAMS
+  WEBHOOK
+  SMS
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  CANCELLED
 }

@@ -4,6 +4,7 @@ import { connectDB, disconnectDB } from './db';
 import { importRoutes } from './routes/import.routes';
 import { campaignRoutes } from './routes/campaign.routes';
 import { reviewRoutes } from './routes/review.routes';
+import { errorHandler } from './lib/error-handler';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = '0.0.0.0';
@@ -14,6 +15,9 @@ async function startServer() {
       level: process.env.NODE_ENV === 'development' ? 'info' : 'warn',
     },
   });
+
+  // Register error handler
+  fastify.setErrorHandler(errorHandler);
 
   // Register CORS
   await fastify.register(cors, {
@@ -30,6 +34,17 @@ async function startServer() {
   await fastify.register(importRoutes);
   await fastify.register(campaignRoutes);
   await fastify.register(reviewRoutes);
+
+  // Import new route modules
+  const { accessRequestRoutes } = await import('./routes/access-request.routes');
+  const { delegationRoutes } = await import('./routes/delegation.routes');
+  const { templateRoutes } = await import('./routes/template.routes');
+  const { auditRoutes } = await import('./routes/audit.routes');
+
+  await fastify.register(accessRequestRoutes);
+  await fastify.register(delegationRoutes);
+  await fastify.register(templateRoutes);
+  await fastify.register(auditRoutes);
 
   // Connect to database
   await connectDB();
